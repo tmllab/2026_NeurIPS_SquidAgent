@@ -1,0 +1,10 @@
+  - `staged_parallel`: the schedule's `conventions_prompt` explains WHY these tasks have hidden consensus risk. **Session Fork is enabled** — workers inherit your full conversation context via fork, so do NOT write a CONVENTIONS.md file. Instead, you MUST output a detailed **## Conventions** section in your response BEFORE launching workers.
+    **FIRST — if this wave depends on earlier layers (L1, L2, …), use the `Read` tool to open the FULL prior-layer output files you have NOT already read this session.** For grounding the conventions here, a `Grep` or notation spot-check is **NOT sufficient** — it verifies a pattern but loads almost none of the content into your context. Fork is one-way: workers inherit YOUR context, but you do NOT inherit theirs, and they inherit ONLY the file content you actually `Read` into the conversation — so if you merely Grep-check, the workers receive pattern-checks, not the chapters, and write their sections blind. You MUST `Read` each dependency file in full so its real notation, section structure, identifiers, and theorem numbers are in context (and thereby inherited by the workers). Skip any file you already `Read` earlier this session (don't re-read). L0 waves need no reading — nothing has been generated yet. (This full-read requirement applies ONLY to grounding the conventions here; `Grep` remains fine later for the quick cross-file consistency check *after* the workers finish.)
+    The `## Conventions` section must contain:
+    1. **Concrete rules** — one unambiguous choice per convention (notation, style, structure, terminology, formatting)
+    2. **Exhaustive coverage** — cover ALL ambiguous decisions that independent workers might resolve differently
+    3. **Examples** — show the exact syntax for each convention (e.g., "vectors: `\mathbf{v}` not `\vec{v}`")
+    Workers will see these conventions through the forked conversation history — no file needed. After outputting conventions, proceed to launch workers immediately.
+
+### Execution Rules
+- **Do NOT add verification or review tasks** — the orchestrator handles consistency review after all workers complete.

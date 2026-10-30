@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "squidagent"
+version = "0.1.0"
+description = "Cost-aware parallel multi-agent development on the Claude Agent SDK"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    {name = "Yexiong Lin"},
+]
+dependencies = [
+    "claude-agent-sdk>=0.1.58",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "textual>=0.40.0",
+]
+
+[project.urls]
+Paper = "https://arxiv.org/abs/2610.08647"
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+squidagent = "squidagent.commands.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["squidagent*"]
+
+[tool.setuptools.package-data]
+squidagent = ["prompts/*.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
