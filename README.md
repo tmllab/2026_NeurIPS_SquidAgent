@@ -129,6 +129,15 @@ Inside the session, type your request and press Enter. Available commands:
 
 Keys: `Esc` interrupts the current task, `Ctrl+C` quits.
 
+At the end of each request (agent-tool) or session (worktree), SquidAgent
+reports the total cost and the **deliverables** the run produced:
+- **What counts:** files created since the run started (full content) and lines
+  added to existing files. SquidAgent's own files are excluded.
+- **Reported numbers:** words, tokens, and **deliverable tokens per $ / words
+  per $**.
+- **Tokenizer:** tokens are counted with tiktoken's `cl100k_base` as an
+  approximation, since Claude's tokenizer is not public.
+
 ## Git layout and runtime files
 
 In worktree mode, git is the single source of truth. Plans and task metadata
@@ -145,7 +154,7 @@ flow                               # base branch for SquidAgent sessions
 |---|---|
 | `.squidagent/ORCHESTRATOR_INSTRUCTIONS.md`, `WORKER_INSTRUCTIONS.md` | Worktree-mode agent instructions, assembled from `squidagent/prompts/` |
 | `.squidagent/sched_trace.json` | Scheduler decisions (per-layer ratio and strategy) |
-| `.squidagent/metrics/` | Per-session metrics: wall time, tokens, cost, worker stats. Agent-tool mode also saves the plan (`schedule.json`) and the full `claude -p` stream (`<session>_cli.jsonl`) |
+| `.squidagent/metrics/` | Per-session metrics: wall time, tokens, cost, worker stats, and deliverables with cost efficiency. Agent-tool mode also saves the plan (`schedule.json`) and the full `claude -p` stream (`<session>_cli.jsonl`) |
 | `~/.squidagent/logs/` | Session logs (in worktree mode: every tool call and result) |
 
 ## Configuration

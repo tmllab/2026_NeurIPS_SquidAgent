@@ -198,8 +198,13 @@ def _poll_control(control_queue: Optional[asyncio.Queue], deferred: List[dict]) 
 async def plan(request: str, session_id: str, model: str, effort: Optional[str],
                max_parallel: int, bypass_threshold: int = AGENT_TOOL_BYPASS_THRESHOLD,
                control_queue: Optional[asyncio.Queue] = None,
-               deferred: Optional[List[dict]] = None) -> Optional[Dict]:
-    """Phase 1: SDK session that only calls create_plan_branch (plan-only)."""
+               deferred: Optional[List[dict]] = None,
+               usage_out: Optional[Dict] = None) -> Optional[Dict]:
+    """Phase 1: SDK session that only calls create_plan_branch (plan-only).
+
+    Returns the plan data. If usage_out is given, it is filled with the
+    planning session's cost and token usage (also on interruption).
+    """
     from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
     from .git_tools import create_git_tools_server, set_plan_only, get_plan_only_result
     from .sdk_workers import create_worker_tools_server
@@ -224,6 +229,8 @@ async def plan(request: str, session_id: str, model: str, effort: Optional[str],
         async with ClaudeSDKClient(options=ClaudeAgentOptions(**options_kwargs)) as client:
             await client.query(planning_prompt(request, session_id))
             async for msg in client.receive_response():
+                if type(msg).__name__ == "ResultMessage" and usage_out is not None:
+                    usage_out.update(_sdk_usage(msg))
                 for block in getattr(msg, "content", None) or []:
                     if type(block).__name__ == "ToolUseBlock":
                         click.echo(f"  [plan] tool: {block.name}")
@@ -233,6 +240,21 @@ async def plan(request: str, session_id: str, model: str, effort: Optional[str],
         return get_plan_only_result()
     finally:
         set_plan_only(False)
+
+
+def _sdk_usage(result_msg) -> Dict:
+    """Cost + token usage from a Claude Agent SDK ResultMessage."""
+    usage = getattr(result_msg, "usage", None) or {}
+    return {
+        "cost_usd": getattr(result_msg, "total_cost_usd", None) or 0.0,
+        "num_turns": getattr(result_msg, "num_turns", 0) or 0,
+        "tokens": {
+            "output": usage.get("output_tokens", 0),
+            "input": usage.get("input_tokens", 0),
+            "cache_read": usage.get("cache_read_input_tokens", 0),
+            "cache_creation": usage.get("cache_creation_input_tokens", 0),
+        },
+    }
 
 
 def _describe_event(msg: dict) -> Optional[str]:
@@ -357,12 +379,17 @@ async def run_agent_tool_session(request: str, session_id: str, model: str,
     if logger:
         logger.info(f"[AGENT-TOOL] request: {request}")
 
+    from . import deliverables
+
     record: Dict = {"session_id": session_id, "mode": "agent-tool", "model": model, "effort": effort}
+    plan_usage: Dict = {}
+    deliv_snapshot = deliverables.snapshot()
     t0 = time.time()
     try:
         click.echo("\n[Phase 1] Planning + scheduling...")
         plan_data = await plan(request, session_id, model, effort, max_parallel,
-                               control_queue=control_queue, deferred=deferred)
+                               control_queue=control_queue, deferred=deferred,
+                               usage_out=plan_usage)
         t_plan = time.time() - t0
         schedule = (plan_data or {}).get("schedule") or {}
         record.update({
@@ -391,6 +418,23 @@ async def run_agent_tool_session(request: str, session_id: str, model: str,
         click.echo("\n[STOP] Planning interrupted.")
     record["wall_time"] = round(time.time() - t0, 1)
 
+    # Cost / tokens: planning session + `claude -p` execution
+    exec_tokens = record.pop("tokens", None) or {}
+    plan_tokens = plan_usage.get("tokens", {})
+    record["planning_cost_usd"] = round(plan_usage.get("cost_usd", 0.0), 4)
+    record["execution_cost_usd"] = round(record.get("cost_usd", 0.0), 4)
+    record["cost_usd"] = round(record["planning_cost_usd"] + record["execution_cost_usd"], 4)
+    record["planning_tokens"] = plan_tokens
+    record["execution_tokens"] = exec_tokens
+    record["tokens"] = {k: plan_tokens.get(k, 0) + exec_tokens.get(k, 0)
+                        for k in ("output", "input", "cache_read", "cache_creation")}
+
+    # Effective output: deliverable tokens/words and cost efficiency
+    deliv = deliverables.measure(deliv_snapshot)
+    eff = deliverables.efficiency(deliv, record["cost_usd"], record["wall_time"])
+    record["deliverables"] = deliv
+    record.update(eff)
+
     (metrics_dir / f"{session_id}.json").write_text(json.dumps(record, indent=2, default=str))
     click.echo("\n" + "=" * 60)
     if record.get("interrupted"):
@@ -398,7 +442,9 @@ async def run_agent_tool_session(request: str, session_id: str, model: str,
     else:
         click.echo(f"Done in {record['wall_time']}s (plan {record.get('planning_time')}s + "
                    f"execute {record.get('execution_time')}s) | "
-                   f"cost ${record.get('cost_usd', 0):.2f} | subagents {record.get('n_subagents', 0)}")
+                   f"cost ${record['cost_usd']:.2f} (plan ${record['planning_cost_usd']:.2f} + "
+                   f"execute ${record['execution_cost_usd']:.2f}) | subagents {record.get('n_subagents', 0)}")
+        click.echo(deliverables.summary_line(deliv, eff))
     click.echo(f"Metrics saved to: {metrics_dir / (session_id + '.json')}")
     click.echo("=" * 60)
     if logger:

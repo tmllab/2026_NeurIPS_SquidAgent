@@ -206,6 +206,8 @@ class SessionMetrics:
     t_start: float = 0.0
     t_end: Optional[float] = None
     workers: Dict[str, WorkerMetrics] = field(default_factory=dict)
+    # Effective output measured at session end (see squidagent.deliverables)
+    deliverables: Optional[Dict[str, Any]] = None
 
     # --- Orchestrator tracking ---
     # Tools the orchestrator called itself (not via a Worker).
@@ -662,6 +664,7 @@ class SessionMetrics:
             'max_parallel': self.max_parallel,
             't_start': self.t_start,
             't_end': self.t_end,
+            'total_cost_usd': round(self.total_cost_usd, 4),
             'aggregate': {
                 'T_total': round(self.T_total, 2),
                 'T_seq_estimated': round(self.T_seq_estimated, 2),
@@ -737,7 +740,19 @@ class SessionMetrics:
                 wid: w.to_dict() for wid, w in self.workers.items()
             },
             'recommendation': self.recommendation(),
+            'deliverables': self.deliverables,
+            'efficiency': self._efficiency(),
         }
+
+    def _efficiency(self) -> Dict[str, Any]:
+        # Per-USD only: an interactive worktree session's wall time includes idle time
+        from .deliverables import efficiency
+        return efficiency(self.deliverables, self.total_cost_usd)
+
+    @property
+    def total_cost_usd(self) -> float:
+        """Orchestrator (session-cumulative) + all worker sessions."""
+        return self.orchestrator_cost_usd + sum(w.cost_usd for w in self.workers.values())
 
     def format_report(self) -> str:
         """Generate human-readable report for console output."""
@@ -760,6 +775,12 @@ class SessionMetrics:
         lines.append(f"  Workers               : {agg['n_workers']}  "
                      f"(max_parallel={self.max_parallel})")
         lines.append(f"  Success rate          : {agg['success_rate']:>8.1%}")
+        workers_cost = d['total_cost_usd'] - d['orchestrator']['cost_usd']
+        lines.append(f"  Total cost            : {'$' + format(d['total_cost_usd'], '.2f'):>9s}  "
+                     f"(orchestrator ${d['orchestrator']['cost_usd']:.2f} + workers ${workers_cost:.2f})")
+        if d['deliverables'] is not None:
+            from .deliverables import summary_line
+            lines.append(f"  {summary_line(d['deliverables'], d['efficiency'])}")
 
         lines.append("")
         lines.append("## Overhead Breakdown")

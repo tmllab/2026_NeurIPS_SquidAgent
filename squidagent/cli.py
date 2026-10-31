@@ -300,6 +300,9 @@ async def run_development_session(
     # max_parallel=1 when sequential so recommendations interpret correctly
     _metrics_max_parallel = max_parallel if enable_parallel else 1
     get_metrics_collector().start_session(session_id, _metrics_max_parallel)
+    # Snapshot the repo so the session's deliverables can be measured at the end
+    from . import deliverables as _deliverables
+    _deliv_snapshot = _deliverables.snapshot()
 
     # Print banner
     click.echo("=" * 60)
@@ -970,6 +973,10 @@ Begin."""
             collector = get_metrics_collector()
             finished = collector.end_session()
             if finished is not None:
+                try:
+                    finished.deliverables = _deliverables.measure(_deliv_snapshot)
+                except Exception:
+                    pass
                 if finished.workers:
                     click.echo("")
                     click.echo(finished.format_report())
